@@ -1,0 +1,63 @@
+{
+  "schema_version": "0.1",
+  "run_id": "uuid-here",
+  "source": {
+    "url": "https://www.youtube.com/watch?v=GYahXGrMGgU",
+    "video_id": "GYahXGrMGgU",
+    "title": "Cowhide drum牛皮大鼓"
+  },
+  "files": {
+    "raw_path": "assets/raw/Cowhide drum牛皮大鼓 [GYahXGrMGgU].webm",
+    "normalized_path": "assets/normalized/GYahXGrMGgU.normalized.mp4"
+  },
+  "video": {
+    "duration_s": 0,
+    "fps": 30,
+    "width": 0,
+    "height": 0
+  },
+  "params": {
+    "normalize": {
+      "preset": "max1280_cfr30",
+      "crf": 16,
+      "preset_speed": "slow"
+    },
+    "scene_detect": {
+      "method": "content",
+      "threshold": 27.0,
+      "min_scene_len_frames": 15
+    },
+    "keyframes": {
+      "strategy": "midpoint",
+      "per_scene": 2
+    }
+  },
+  "scenes": [
+    {
+      "scene_id": 0,
+      "start_s": 0.0,
+      "end_s": 2.4,
+      "duration_s": 2.4,
+      "keyframes": [
+        { "path": "runs/uuid/frames/scene_000/kf_00.jpg", "ts_s": 1.2 }
+      ],
+      "vision": {
+        "summary": "",
+        "tags": [],
+        "text_on_screen": null,
+        "confidence": 0.0
+      }
+    }
+  ],
+  "beats": [
+    {
+      "beat_id": 0,
+      "scene_ids": [0],
+      "start_s": 0.0,
+      "end_s": 2.4,
+      "summary": "",
+      "intent": "unknown",
+      "priority": 3
+    }
+  ]
+}
