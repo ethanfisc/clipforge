@@ -1,0 +1,23 @@
+{
+  "schema_version": "0.1",
+  "run_id": "{{run_id}}",
+  "source": {
+    "url": "{{source_url}}",
+    "video_id": "{{source_video_id}}",
+    "title": "{{source_title}}"
+  },
+  "files": {
+    "raw_path": "{{files_raw_path}}",
+    "normalized_path": "{{files_normalized_path}}"
+  },
+  "video": {
+    "duration_s": {{video_duration_s}},
+    "fps": 30,
+    "width": {{video_width}},
+    "height": {{video_height}},
+    "sar": "1:1"
+  },
+  "params": {{params}},
+  "scenes": {{scenes_array}},
+  "beats": {{beats_array}}
+}

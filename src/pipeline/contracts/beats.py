@@ -4,8 +4,8 @@
 
 from __future__ import annotations
 
-from typing import Literal, Optional, List
-from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
+from typing import List, Literal, Optional
+from pydantic import BaseModel, ConfigDict, Field, model_validator, computed_field
 
 SchemaVersion = Literal["0.1"]
 BeatIntent = Literal["hook", "step", "payoff", "broll", "unknown"]
@@ -24,19 +24,19 @@ class Files(BaseModel):
     normalized_path: str
 
 
-class VideoMeta(BaseModel):
+class VideoMeta(BaseModel):  # video properties for cutting/rendering logic
     model_config = ConfigDict(extra="forbid")
     duration_s: float = Field(ge=0)
     fps: Literal[30] = 30
     width: int = Field(ge=1)
     height: int = Field(ge=1)
-    sar: Literal["1:1"] = "1:1"  # setsar=1
+    sar: Literal["1:1"] = "1:1"  # Sample aspect ratio locked to 1:1 (square pixels)
 
 
-class Keyframe(BaseModel):
+class Keyframe(BaseModel):  # keyframe at specific timestamp
     model_config = ConfigDict(extra="forbid")
-    path: str
-    ts_s: float = Field(ge=0)
+    path: str  # path to keyframe image
+    ts_s: float = Field(ge=0)  # timestamp in seconds
 
 
 class Vision(BaseModel):
@@ -47,6 +47,7 @@ class Vision(BaseModel):
     confidence: float = Field(ge=0, le=1, default=0.0)
 
 
+# A contiguous time segment in the video.
 class Scene(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scene_id: int = Field(ge=0)
@@ -54,6 +55,11 @@ class Scene(BaseModel):
     end_s: float = Field(ge=0)
     keyframes: List[Keyframe] = Field(default_factory=list)
     vision: Vision = Field(default_factory=Vision)
+
+    @computed_field(return_type=float)
+    @property
+    def duration_s(self) -> float:
+        return self.end_s - self.start_s
 
     @model_validator(mode="after")
     def _check_times_and_keyframes(self):
@@ -66,15 +72,12 @@ class Scene(BaseModel):
                 )
         return self
 
-    @property
-    def duration_s(self) -> float:
-        return self.end_s - self.start_s
 
-
+# A higher-level editorial unit, may span one or more scenes
 class Beat(BaseModel):
     model_config = ConfigDict(extra="forbid")
     beat_id: int = Field(ge=0)
-    scene_ids: List[int] = Field(default_factory=list)
+    scene_ids: List[int] = Field(default_factory=list)  # which scenes it uses
     start_s: float = Field(ge=0)
     end_s: float = Field(ge=0)
     summary: str = ""

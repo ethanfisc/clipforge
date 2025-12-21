@@ -1,5 +1,5 @@
 # Project Spec
-
+run ```pip install -e ".[dev]"```
 ## Downloading from youtube
 
 ```jsx
@@ -27,7 +27,7 @@ ffmpeg -i "Cowhide drum牛皮大鼓 [GYahXGrMGgU].webm" \
   -c:a aac -b:a 192k \
   -movflags +faststart \
   "normalized_720x1280.mp4"
-  
+
 // Force exact 720x1280 (vertical) + fill frame (crop instead of pad)
 // Force exact 720x1280 (vertical) + keep full image (letterbox/pillarbox)
 ```
