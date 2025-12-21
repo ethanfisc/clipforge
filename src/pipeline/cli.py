@@ -1,10 +1,117 @@
-# Typer CLI entrypoint
+# Typer CLI entrypoint: URL -> download -> normalize -> ffprobe -> scene detect -> frame sampling -> write beats.json
+from __future__ import annotations
+
+import uuid
+from pathlib import Path
+
 import typer
 
-app = typer.Typer()
+from pipeline.steps.download import download_video
+from pipeline.steps.normalize import normalize_max1280_cfr30
+from pipeline.steps.probe import probe_video
+from pipeline.steps.scene_detect import detect_scenes
+from pipeline.steps.keyframes import extract_keyframes
+from pipeline.steps.emit_beats import write_beats_json
+
+app = typer.Typer(no_args_is_help=True)
 
 
-def main():
+@app.callback()
+def _root() -> None:
+    """Shorts pipeline CLI."""
+    pass
+
+
+@app.command()
+def run(
+    url: str,
+    threshold: float = 27.0,
+    min_scene_len_frames: int = 15,
+    keyframes_per_scene: int = 2,
+):
+    """
+    One-shot: URL -> beats.json (+ keyframes).
+    Outputs:
+      - assets/downloads/yt/ (raw)
+      - assets/normalized/   (normalized mp4)
+      - runs/<run_id>/       (beats.json, frames/, logs/)
+    """
+    repo_root = Path.cwd()
+
+    raw_dir = repo_root / "assets" / "downloads" / "yt"
+    normalized_dir = repo_root / "assets" / "normalized"
+
+    run_id = str(uuid.uuid4())
+    run_dir = repo_root / "runs" / run_id
+    frames_dir = run_dir / "frames"
+    logs_dir = run_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1) download
+    raw_path, video_id, title = download_video(
+        url, raw_dir, log_path=logs_dir / "yt-dlp_download.log"
+    )
+
+    # 2) normalize
+    normalized_path = normalize_max1280_cfr30(
+        raw_path, normalized_dir, video_id, log_path=logs_dir / "ffmpeg_normalize.log"
+    )
+
+    # 3) probe
+    duration_s, width, height = probe_video(
+        normalized_path, log_path=logs_dir / "ffprobe.log"
+    )
+
+    # 4) scene detect
+    scenes = detect_scenes(
+        normalized_path,
+        threshold=threshold,
+        min_scene_len_frames=min_scene_len_frames,
+    )
+
+    # 5) keyframes
+    scene_kfs = extract_keyframes(
+        normalized_path,
+        frames_dir,
+        scenes,
+        per_scene=keyframes_per_scene,
+        log_dir=logs_dir,
+    )
+
+    # 6) emit beats.json
+    params = {
+        "normalize": {"preset": "max1280_cfr30", "crf": 16, "preset_speed": "slow"},
+        "scene_detect": {
+            "method": "content",
+            "threshold": threshold,
+            "min_scene_len_frames": min_scene_len_frames,
+        },
+        "keyframes": {"strategy": "uniform_interior", "per_scene": keyframes_per_scene},
+    }
+
+    beats_path = write_beats_json(
+        run_id=run_id,
+        url=url,
+        video_id=video_id,
+        title=title,
+        raw_path=raw_path,
+        normalized_path=normalized_path,
+        duration_s=duration_s,
+        width=width,
+        height=height,
+        params=params,
+        scenes_times=scenes,
+        scenes_keyframes=scene_kfs,
+        out_path=run_dir / "beats.json",
+    )
+
+    typer.echo(f"run_id: {run_id}")
+    typer.echo(f"beats:  {beats_path}")
+    typer.echo(f"frames: {frames_dir}")
+    typer.echo(f"video:  {normalized_path}")
+
+
+def main() -> None:
     app()
 
 

@@ -1,5 +1,5 @@
 .venv
 assets
 outputs
-.env
 __pycache__
+runs
