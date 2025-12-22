@@ -7,15 +7,37 @@ from typing import Sequence
 
 
 class CmdError(RuntimeError):
-    pass
+    def __init__(
+        self, cmd: Sequence[str], returncode: int, output: str, log_path: Path | None
+    ):
+        self.cmd = list(cmd)
+        self.returncode = returncode
+        self.output = output
+        self.log_path = log_path
+        super().__init__(self._build_msg())
+
+    def _build_msg(self) -> str:
+        hint = f"\nSee log: {self.log_path}" if self.log_path else ""
+        return f"Command failed ({self.returncode}): {' '.join(self.cmd)}{hint}\n{self.output}"
 
 
 def run_cmd(
-    cmd: Sequence[str], *, log_path: Path | None = None, cwd: Path | None = None
+    cmd: Sequence[str],
+    *,
+    cwd: Path | None = None,
+    # If provided, write output to this path (mode depends on write_on_success)
+    log_path: Path | None = None,
+    # If True, write output even on success; if False, only write on failure. false generally used for noisy commands.
+    write_on_success: bool = True,
 ) -> str:
     """
-    Run a command. If log_path is provided, write stdout/stderr to it.
-    Returns stdout (text). Raises CmdError on non-zero exit.
+    Run a command and capture stdout+stderr (merged).
+    Returns combined output (text). Raises CmdError on non-zero exit.
+
+    Logging:
+      - if log_path is None: no file write
+      - if write_on_success: write output always
+      - else: write output only on failure (good for "debug log on failure")
     """
     proc = subprocess.run(
         list(cmd),
@@ -25,10 +47,15 @@ def run_cmd(
         stderr=subprocess.STDOUT,
     )
     out = proc.stdout or ""
-    if log_path:
+
+    if proc.returncode != 0:
+        if log_path:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text(out, encoding="utf-8")
+        raise CmdError(cmd, proc.returncode, out, log_path)
+
+    if log_path and write_on_success:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.write_text(out, encoding="utf-8")
 
-    if proc.returncode != 0:
-        raise CmdError(f"Command failed ({proc.returncode}): {' '.join(cmd)}\n{out}")
     return out

@@ -88,7 +88,7 @@ def run(
         frames_dir,
         scenes,
         per_scene=keyframes_per_scene,
-        log_dir=logs_dir,
+        log_dir=logs_dir / "ffmpeg_keyframes",
     )
     log(f"  frames_dir: {frames_dir}")
 

@@ -6,6 +6,7 @@ from pathlib import Path
 from pipeline.util.shell import run_cmd
 
 
+# TODO: speed this function up. very slow on long videos.
 def normalize_max1280_cfr30(
     raw_path: Path, normalized_dir: Path, video_id: str, *, log_path: Path
 ) -> Path:
