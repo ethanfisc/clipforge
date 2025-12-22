@@ -5,6 +5,7 @@ from pathlib import Path
 
 import typer
 
+from pipeline.contracts.beats import BeatsRun
 from pipeline.steps.download import download_video
 from pipeline.steps.normalize import normalize_max1280_cfr30
 from pipeline.steps.probe import probe_video
@@ -117,6 +118,9 @@ def run(
         scenes_keyframes=scene_kfs,
         out_path=run_dir / "beats.json",
     )
+
+    BeatsRun.model_validate_json(beats_path.read_text(encoding="utf-8"))
+    typer.echo("validate: OK")
 
     typer.echo(f"run_id: {run_id}")
     typer.echo(f"beats:  {beats_path}")
