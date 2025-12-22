@@ -19,9 +19,7 @@ def probe_video(path: Path, *, log_path: Path) -> Tuple[float, int, int]:
             "-select_streams",
             "v:0",
             "-show_entries",
-            "stream=width,height",
-            "-show_entries",
-            "format=duration",
+            "format=duration:stream=width,height",
             "-of",
             "json",
             str(path),
@@ -29,7 +27,19 @@ def probe_video(path: Path, *, log_path: Path) -> Tuple[float, int, int]:
         log_path=log_path,
     )
     data = json.loads(out)
-    duration_s = float(data["format"]["duration"])
-    width = int(data["streams"][0]["width"])
-    height = int(data["streams"][0]["height"])
+
+    streams = data.get("streams") or []
+    if not streams:
+        raise RuntimeError(f"No video stream found in {path}. See log: {log_path}")
+
+    fmt = data.get("format") or {}
+    dur = fmt.get("duration")
+    if dur in (None, "N/A", ""):
+        raise RuntimeError(
+            f"No duration reported by ffprobe for {path}. See log: {log_path}"
+        )
+
+    duration_s = float(dur)
+    width = int(streams[0]["width"])
+    height = int(streams[0]["height"])
     return duration_s, width, height

@@ -21,25 +21,6 @@ def _extract_video_id(url: str) -> str:
     return ""
 
 
-_YTDLP_ARGS = [
-    "yt-dlp",
-    "--no-playlist",
-    "--js-runtimes",
-    "node",
-    "--remote-components",
-    "ejs:github",
-    "--retries",
-    "10",
-    "--fragment-retries",
-    "10",
-    "--retry-sleep",
-    "1:5",
-    "-f",
-    "bv*+ba/bv*",
-    "--print-json",
-]
-
-
 def _last_json_line(text: str) -> dict:
     for line in reversed(text.splitlines()):
         line = line.strip()
@@ -85,7 +66,26 @@ def _write_summary(log_path: Path, *, url: str, info: dict, raw_path: Path) -> N
 def download_video(url: str, raw_dir: Path, *, log_path: Path) -> Tuple[Path, str, str]:
     raw_dir.mkdir(parents=True, exist_ok=True)
     out_tmpl = str(raw_dir / "%(title).200s [%(id)s].%(ext)s")
-    cmd = [*_YTDLP_ARGS, "-o", out_tmpl, url]
+    cmd = [
+        "yt-dlp",
+        "--no-playlist",
+        "--js-runtimes",
+        "node",
+        "--remote-components",
+        "ejs:github",
+        "--retries",
+        "10",
+        "--fragment-retries",
+        "10",
+        "--retry-sleep",
+        "1:5",
+        "-f",
+        "bv*+ba/bv*",
+        "--print-json",
+        "-o",
+        out_tmpl,
+        url,
+    ]
 
     debug_log = log_path.with_suffix(".debug.log")
 

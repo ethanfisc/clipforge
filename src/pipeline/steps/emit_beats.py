@@ -15,6 +15,10 @@ from pipeline.contracts.beats import (
 )
 
 
+def _r(x: float, ndigits: int = 3) -> float:
+    return round(float(x), ndigits)
+
+
 def write_beats_json(
     *,
     run_id: str,
@@ -35,8 +39,11 @@ def write_beats_json(
     beats = []
 
     for scene_id, (start_s, end_s) in enumerate(scenes_times):
+        start_s_r = _r(start_s)
+        end_s_r = _r(end_s)
+
         kfs = [
-            Keyframe(path=str(p), ts_s=ts)
+            Keyframe(path=str(p), ts_s=_r(ts))
             for (p, ts) in (
                 scenes_keyframes[scene_id] if scene_id < len(scenes_keyframes) else []
             )
@@ -44,8 +51,8 @@ def write_beats_json(
         scenes.append(
             Scene(
                 scene_id=scene_id,
-                start_s=start_s,
-                end_s=end_s,
+                start_s=start_s_r,
+                end_s=end_s_r,
                 keyframes=kfs,
                 vision=Vision(),  # empty for now
             )
@@ -55,8 +62,8 @@ def write_beats_json(
             Beat(
                 beat_id=scene_id,
                 scene_ids=[scene_id],
-                start_s=start_s,
-                end_s=end_s,
+                start_s=start_s_r,
+                end_s=end_s_r,
                 summary="",
                 intent="unknown",
                 priority=3,
@@ -80,5 +87,10 @@ def write_beats_json(
     )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(run.model_dump_json(indent=2), encoding="utf-8")
+
+    json_text = run.model_dump_json(
+        indent=2,
+        exclude={"scenes": {"__all__": {"duration_s"}}},
+    )
+    out_path.write_text(json_text, encoding="utf-8")
     return out_path

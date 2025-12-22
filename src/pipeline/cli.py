@@ -1,4 +1,3 @@
-# Typer CLI entrypoint: URL -> download -> normalize -> ffprobe -> scene detect -> frame sampling -> write beats.json
 from __future__ import annotations
 
 import uuid
@@ -18,7 +17,7 @@ app = typer.Typer(no_args_is_help=True)
 
 @app.callback()
 def _root() -> None:
-    """Shorts pipeline CLI."""
+    """clipforge pipeline CLI."""
     pass
 
 
