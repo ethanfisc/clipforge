@@ -26,33 +26,45 @@ def fetch_metadata(url: str, *, log_path: Path) -> Tuple[str, str]:
     """
     Returns (video_id, title). Uses yt-dlp metadata (no download).
     """
-    out = run_cmd(
+    stdout = run_cmd(
         [
             "yt-dlp",
             "--no-playlist",
+            "--js-runtimes",
+            "node",
             "--skip-download",
+            "--no-warnings",
+            "--quiet",
             "--print",
-            "%(id)s",
-            "--print",
-            "%(title)s",
+            "%(id)s\t%(title)s",
             url,
         ],
         log_path=log_path,
-    ).splitlines()
+    ).strip()
 
-    if len(out) >= 2 and out[0].strip():
-        return out[0].strip(), out[1].strip()
+    if stdout:
+        line = stdout.splitlines()[-1].strip()
+        if "\t" in line:
+            vid, title = line.split("\t", 1)
+            vid = vid.strip()
+            title = title.strip()
+            if vid:
+                return vid, title
 
-    # fallback: try to extract id from URL if yt-dlp output is weird
+    # fallback: parse id from URL
     vid = _extract_video_id(url) or "unknown"
-    title = "unknown"
-    return vid, title
+    return vid, "unknown"
 
 
 def download_video(url: str, raw_dir: Path, *, log_path: Path) -> Tuple[Path, str, str]:
     """
     Downloads using yt-dlp. Returns (raw_path, video_id, title).
-    Output filename pattern: "<title> [<id>].<ext>".
+
+    Strategy:
+    - First fetch metadata (id/title).
+    - Download using output template "<title> [<id>].<ext>".
+    - Prefer the exact filepath printed by yt-dlp via `after_move:filepath`.
+    - Fall back to scanning the raw_dir for a file containing "[<id>]".
     """
     raw_dir.mkdir(parents=True, exist_ok=True)
     video_id, title = fetch_metadata(
@@ -61,16 +73,33 @@ def download_video(url: str, raw_dir: Path, *, log_path: Path) -> Tuple[Path, st
 
     out_tmpl = str(raw_dir / "%(title).200s [%(id)s].%(ext)s")
     run_cmd(
-        ["yt-dlp", "--no-playlist", "-f", "bv*+ba/b", "-o", out_tmpl, url],
+        [
+            "yt-dlp",
+            "--no-playlist",
+            "--js-runtimes",
+            "node",
+            "-f",
+            "bv*+ba/b",
+            "-o",
+            out_tmpl,
+            "--print",
+            "after_move:filepath",
+            url,
+        ],
         log_path=log_path,
     )
 
     # Find the downloaded file for this id (ext can vary).
+    needle = f"[{video_id.strip()}]"
     matches = sorted(
-        raw_dir.glob(f"* [{video_id}].*"), key=lambda p: p.stat().st_mtime, reverse=True
+        (p for p in raw_dir.iterdir() if p.is_file() and needle in p.name),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
     )
+
     if not matches:
         raise RuntimeError(
-            f"Download completed but no file matching id {video_id} found in {raw_dir}"
+            f"yt-dlp did not produce a file for id {video_id} in {raw_dir}. "
+            f"See log: {log_path}. Files present: {[p.name for p in raw_dir.iterdir() if p.is_file()]}"
         )
     return matches[0], video_id, title

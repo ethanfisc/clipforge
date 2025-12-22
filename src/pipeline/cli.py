@@ -28,17 +28,18 @@ def run(
     threshold: float = 27.0,
     min_scene_len_frames: int = 15,
     keyframes_per_scene: int = 2,
+    verbose: bool = False,
 ):
     """
     One-shot: URL -> beats.json (+ keyframes).
     Outputs:
-      - assets/downloads/yt/ (raw)
+      - assets/raw/ (raw)
       - assets/normalized/   (normalized mp4)
       - runs/<run_id>/       (beats.json, frames/, logs/)
     """
     repo_root = Path.cwd()
 
-    raw_dir = repo_root / "assets" / "downloads" / "yt"
+    raw_dir = repo_root / "assets" / "raw"
     normalized_dir = repo_root / "assets" / "normalized"
 
     run_id = str(uuid.uuid4())
@@ -47,29 +48,41 @@ def run(
     logs_dir = run_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1) download
+    def log(msg: str):
+        if verbose:
+            typer.echo(msg)
+
+    log("[1/6] downloading...")
     raw_path, video_id, title = download_video(
         url, raw_dir, log_path=logs_dir / "yt-dlp_download.log"
     )
 
-    # 2) normalize
+    log(f"  video_id: {video_id}")
+    log(f"  title:    {title}")
+    log(f"  raw:      {raw_path}")
+
+    log("[2/6] normalizing...")
     normalized_path = normalize_max1280_cfr30(
         raw_path, normalized_dir, video_id, log_path=logs_dir / "ffmpeg_normalize.log"
     )
+    log(f"  normalized: {normalized_path}")
 
-    # 3) probe
+    log("[3/6] probing...")
     duration_s, width, height = probe_video(
         normalized_path, log_path=logs_dir / "ffprobe.log"
     )
+    log(f"  duration_s: {duration_s:.2f}")
+    log(f"  size:       {width}x{height}")
 
-    # 4) scene detect
+    log("[4/6] detecting scenes...")
     scenes = detect_scenes(
         normalized_path,
         threshold=threshold,
         min_scene_len_frames=min_scene_len_frames,
     )
+    log(f"  scenes:     {len(scenes)}")
 
-    # 5) keyframes
+    log("[5/6] extracting keyframes...")
     scene_kfs = extract_keyframes(
         normalized_path,
         frames_dir,
@@ -77,8 +90,8 @@ def run(
         per_scene=keyframes_per_scene,
         log_dir=logs_dir,
     )
+    log(f"  frames_dir: {frames_dir}")
 
-    # 6) emit beats.json
     params = {
         "normalize": {"preset": "max1280_cfr30", "crf": 16, "preset_speed": "slow"},
         "scene_detect": {
@@ -89,6 +102,7 @@ def run(
         "keyframes": {"strategy": "uniform_interior", "per_scene": keyframes_per_scene},
     }
 
+    log("[6/6] writing beats.json...")
     beats_path = write_beats_json(
         run_id=run_id,
         url=url,
