@@ -12,6 +12,8 @@ from pipeline.steps.probe import probe_video
 from pipeline.steps.scene_detect import detect_scenes
 from pipeline.steps.keyframes import extract_keyframes
 from pipeline.steps.emit_beats import write_beats_json
+from pipeline.steps.describe import describe_beats
+from pipeline.vision.backends.mock import MockVisionBackend
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -126,6 +128,41 @@ def run(
     typer.echo(f"beats:  {beats_path}")
     typer.echo(f"frames: {frames_dir}")
     typer.echo(f"video:  {normalized_path}")
+
+    @app.command()
+    def describe(
+        beats_path: Path,
+        backend: str = typer.Option("mock", help="Vision backend (mock for now)"),
+        strict: bool = typer.Option(False, help="Fail fast on first scene error"),
+        overwrite: bool = typer.Option(
+            False, help="Overwrite existing beats.vision.json"
+        ),
+        resume: bool = typer.Option(True, help="Skip scenes already described"),
+        max_keyframes: int = typer.Option(3, help="Max keyframes per scene"),
+    ):
+        beats_path = beats_path.resolve()
+        run_dir = beats_path.parent
+        out_path = run_dir / "beats.vision.json"
+        errors_path = run_dir / "describe.errors.json"
+        log_path = run_dir / "logs" / "describe.log"
+
+        if backend == "mock":
+            vb = MockVisionBackend()
+        else:
+            raise typer.BadParameter(f"Unknown backend: {backend}")
+
+        out = describe_beats(
+            beats_path=beats_path,
+            backend=vb,
+            out_path=out_path,
+            log_path=log_path,
+            errors_path=errors_path,
+            strict=strict,
+            overwrite=overwrite,
+            resume=resume,
+            max_keyframes=max_keyframes,
+        )
+        typer.echo(str(out))
 
 
 def main() -> None:
