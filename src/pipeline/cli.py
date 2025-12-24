@@ -13,7 +13,7 @@ from pipeline.steps.scene_detect import detect_scenes
 from pipeline.steps.keyframes import extract_keyframes
 from pipeline.steps.emit_beats import write_beats_json
 from pipeline.steps.describe import describe_beats
-from pipeline.vision.backends.mock import MockVisionBackend
+
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -129,40 +129,58 @@ def run(
     typer.echo(f"frames: {frames_dir}")
     typer.echo(f"video:  {normalized_path}")
 
-    @app.command()
-    def describe(
-        beats_path: Path,
-        backend: str = typer.Option("mock", help="Vision backend (mock for now)"),
-        strict: bool = typer.Option(False, help="Fail fast on first scene error"),
-        overwrite: bool = typer.Option(
-            False, help="Overwrite existing beats.vision.json"
-        ),
-        resume: bool = typer.Option(True, help="Skip scenes already described"),
-        max_keyframes: int = typer.Option(3, help="Max keyframes per scene"),
-    ):
-        beats_path = beats_path.resolve()
-        run_dir = beats_path.parent
-        out_path = run_dir / "beats.vision.json"
-        errors_path = run_dir / "describe.errors.json"
-        log_path = run_dir / "logs" / "describe.log"
 
-        if backend == "mock":
-            vb = MockVisionBackend()
-        else:
-            raise typer.BadParameter(f"Unknown backend: {backend}")
+@app.command()
+def describe(
+    beats_path: Path,
+    backend: str = "mock",
+    prompt_version: str = typer.Option(
+        "v1",
+        "--prompt-version",
+        help="Cache salt for prompt/schema changes (bump when you change prompts/output shaping).",
+    ),
+    backend_id: str | None = typer.Option(
+        None,
+        "--backend-id",
+        help="Optional cache salt override (e.g. model name). If omitted, derived from backend + kwargs.",
+    ),
+    recompute: bool = typer.Option(
+        False, "--recompute", help="Force recompute even if vision already filled"
+    ),
+    strict: bool = typer.Option(
+        False, "--strict", help="Fail the whole run if any scene fails"
+    ),
+    overwrite: bool = typer.Option(
+        False, "--overwrite", help="Allow overwriting output file"
+    ),
+    out: Path | None = typer.Option(
+        None, "--out", help="Output path (default beats.vision.json next to beats.json)"
+    ),
+    verbose: bool = False,
+):
+    """
+    Fill scene.vision using keyframe images.
+    Reads beats.json, writes beats.vision.json (by default).
+    """
 
-        out = describe_beats(
-            beats_path=beats_path,
-            backend=vb,
-            out_path=out_path,
-            log_path=log_path,
-            errors_path=errors_path,
-            strict=strict,
-            overwrite=overwrite,
-            resume=resume,
-            max_keyframes=max_keyframes,
-        )
-        typer.echo(str(out))
+    def log(msg: str):
+        if verbose:
+            typer.echo(msg)
+
+    log(f"describe: beats_path={beats_path}")
+    out_path = describe_beats(
+        beats_path,
+        backend=backend,
+        prompt_version=prompt_version,
+        backend_id=backend_id,
+        recompute=recompute,
+        strict=strict,
+        overwrite=overwrite,
+        out_path=out,
+    )
+    BeatsRun.model_validate_json(out_path.read_text(encoding="utf-8"))
+    typer.echo("validate: OK")
+    typer.echo(f"out: {out_path}")
 
 
 def main() -> None:
