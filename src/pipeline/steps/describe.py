@@ -295,7 +295,9 @@ def describe_beats(
     run.params = params
 
     # validate output with contract before writing :contentReference[oaicite:3]{index=3}
-    BeatsRun.model_validate(run.model_dump())
+    BeatsRun.model_validate(
+        run.model_dump(exclude={"scenes": {"__all__": {"duration_s"}}})
+    )
 
     json_text = run.model_dump_json(
         indent=2,

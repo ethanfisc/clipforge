@@ -59,7 +59,9 @@ def extract_keyframes(
                 ],
                 log_path=log_dir / f"ffmpeg_keyframe_scene{scene_id:03d}_kf{i:02d}.log",
             )
-            kfs.append((out_path, ts))
+
+            if out_path.exists():
+                kfs.append((out_path, ts))
 
         all_scene_kfs.append(kfs)
 
