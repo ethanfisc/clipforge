@@ -4,6 +4,7 @@ import uuid
 from pathlib import Path
 
 import typer
+import json
 
 from pipeline.contracts.beats import BeatsRun
 from pipeline.steps.download import download_video
@@ -134,6 +135,11 @@ def run(
 def describe(
     beats_path: Path,
     backend: str = "mock",
+    backend_kwargs: str = typer.Option(
+        "{}",
+        "--backend-kwargs",
+        help='JSON dict passed to backend build(), e.g. \'{"model":"gpt-5-mini","reasoning_effort":"low","verbosity":"low"}\'',
+    ),
     prompt_version: str = typer.Option(
         "v1",
         "--prompt-version",
@@ -162,6 +168,12 @@ def describe(
     Fill scene.vision using keyframe images.
     Reads beats.json, writes beats.vision.json (by default).
     """
+    try:
+        backend_kwargs_dict = json.loads(backend_kwargs)
+        if not isinstance(backend_kwargs_dict, dict):
+            raise ValueError("backend-kwargs must be a JSON object")
+    except Exception as e:
+        raise typer.BadParameter(f"--backend-kwargs must be valid JSON object: {e}")
 
     def log(msg: str):
         if verbose:
@@ -171,6 +183,7 @@ def describe(
     out_path = describe_beats(
         beats_path,
         backend=backend,
+        backend_kwargs=backend_kwargs_dict,
         prompt_version=prompt_version,
         backend_id=backend_id,
         recompute=recompute,
