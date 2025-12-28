@@ -7,43 +7,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from pipeline.util.jsonio import read_text, write_text, dumps_stable
+from pipeline.util.log import RunLogger, _utc_ts
 from pipeline.contracts.beats import BeatsRun, Vision
-from pipeline.util.shell import CmdError  # only for nicer error categorization
+from pipeline.util.shell import CmdError
 
 from pipeline.vision.base import BackendSpec, VisionBackend
 
 
-def _utc_ts() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def _r(x: float, ndigits: int = 3) -> float:
     return round(float(x), ndigits)
-
-
-def _read_text(p: Path) -> str:
-    return p.read_text(encoding="utf-8")
-
-
-def _write_text(p: Path, s: str) -> None:
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(s, encoding="utf-8")
-
-
-def _stable_backend_id(name: str, kwargs: Dict[str, Any]) -> str:
-    # Deterministic string representing backend configuration.
-    # If kwargs include secrets, don't put them here.
-    safe_kwargs = {}
-    for k, v in kwargs.items():
-        if k.lower() in {"api_key", "key", "token"}:
-            continue
-        safe_kwargs[k] = v
-    return f"{name}:{_json_dumps_stable(safe_kwargs, indent=0)}"
-
-
-def _json_dumps_stable(obj: Any, *, indent: int = 2) -> str:
-    # stable keys + stable separators for deterministic output
-    return json.dumps(obj, ensure_ascii=False, sort_keys=True, indent=indent)
 
 
 def _sha256_bytes(b: bytes) -> str:
@@ -56,10 +29,15 @@ def _sha256_file(path: Path) -> str:
     return _sha256_bytes(path.read_bytes())
 
 
-def _append_log(log_path: Path, msg: str) -> None:
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_path.open("a", encoding="utf-8") as f:
-        f.write(f"[{_utc_ts()}] {msg}\n")
+def _stable_backend_id(name: str, kwargs: Dict[str, Any]) -> str:
+    # Deterministic string representing backend configuration.
+    # If kwargs include secrets, don't put them here.
+    safe_kwargs = {}
+    for k, v in kwargs.items():
+        if k.lower() in {"api_key", "key", "token"}:
+            continue
+        safe_kwargs[k] = v
+    return f"{name}:{dumps_stable(safe_kwargs, indent=0)}"
 
 
 def _load_backend(spec: BackendSpec) -> VisionBackend:
@@ -130,6 +108,7 @@ def describe_beats(
     strict: bool = False,
     overwrite: bool = False,
     out_path: Optional[Path] = None,
+    logger: RunLogger | None = None,
 ) -> Path:
     """
     Reads beats.json, fills scene.vision, writes beats.vision.json (default) next to beats.json.
@@ -142,8 +121,9 @@ def describe_beats(
     run_dir = beats_path.parent
     logs_dir = run_dir / "logs"
     log_path = logs_dir / "describe.log"
+    log = logger or RunLogger(log_path=log_path, verbose=False, progress_enabled=False)
 
-    run = BeatsRun.model_validate_json(_read_text(beats_path))
+    run = BeatsRun.model_validate_json(read_text(beats_path))
 
     # output path
     if out_path is None:
@@ -156,9 +136,8 @@ def describe_beats(
     cache_dir = run_dir / "cache" / "vision"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    _append_log(
-        log_path,
-        f"describe: start beats_path={beats_path.name} backend={backend} recompute={recompute} strict={strict}",
+    log.info(
+        f"describe: start beats_path={beats_path.name} backend={backend} recompute={recompute} strict={strict}"
     )
 
     spec = BackendSpec(name=backend, kwargs=backend_kwargs or {})
@@ -177,12 +156,16 @@ def describe_beats(
     # stable ordering by scene_id
     scenes_sorted = sorted(run.scenes, key=lambda s: int(s.scene_id))
 
+    # progress (optional)
+    log.set_total(total, description="describe scenes")
+
     for idx, scene in enumerate(scenes_sorted, start=1):
         sid = int(scene.scene_id)
 
         if (not recompute) and _should_skip(scene.vision):
             skipped += 1
-            _append_log(log_path, f"[{idx}/{total}] scene {sid}: skip (resume)")
+            log.info(f"[{idx}/{total}] scene {sid}: skip (resume)")
+            log.advance(1)
             continue
 
         # collect keyframes deterministically (as stored)
@@ -199,14 +182,13 @@ def describe_beats(
             scene.vision = Vision(
                 summary="", tags=[], text_on_screen=None, confidence=0.0
             )
-            _append_log(log_path, f"[{idx}/{total}] scene {sid}: FAIL (no_keyframes)")
+            log.info(f"[{idx}/{total}] scene {sid}: FAIL (no_keyframes)")
+            log.advance(1)
             if strict:
+                log.close()
                 raise RuntimeError(f"describe strict mode: scene {sid} failed")
             continue
 
-        # per-image cache: load cached descriptors and pass through backend if anything missing
-        # NOTE: backend still sees full list; cache is for backend outputs per-image if you want it.
-        # For MVP: we cache the final per-scene result keyed by *combined* image hashes for the scene.
         try:
             hashes = [
                 _sha256_file(p) for p in kf_paths
@@ -219,18 +201,16 @@ def describe_beats(
                 "keyframes_sha256": hashes,
             }
             scene_key = _sha256_bytes(
-                _json_dumps_stable(scene_key_material, indent=0).encode("utf-8")
+                dumps_stable(scene_key_material, indent=0).encode("utf-8")
             )
             scene_cache_path = cache_dir / f"{scene_key}.json"
 
             if scene_cache_path.exists():
-                payload = json.loads(_read_text(scene_cache_path))
+                payload = json.loads(read_text(scene_cache_path))
                 scene.vision = _vision_from_backend_payload(payload.get("vision", {}))
                 done += 1
-                _append_log(
-                    log_path,
-                    f"[{idx}/{total}] scene {sid}: cache hit ({scene_key[:8]})",
-                )
+                log.info(f"[{idx}/{total}] scene {sid}: cache hit ({scene_key[:8]})")
+                log.advance(1)
                 continue
 
             payload = vb.describe_scene(kf_paths)
@@ -249,13 +229,11 @@ def describe_beats(
                 "keyframes_sha256": hashes,
                 "vision": vision.model_dump(),
             }
-            _write_text(scene_cache_path, _json_dumps_stable(cache_payload))
+            write_text(scene_cache_path, dumps_stable(cache_payload))
 
             done += 1
-            _append_log(
-                log_path,
-                f"[{idx}/{total}] scene {sid}: OK conf={vision.confidence:.3f}",
-            )
+            log.info(f"[{idx}/{total}] scene {sid}: OK conf={vision.confidence:.3f}")
+            log.advance(1)
 
         except Exception as e:
             failed += 1
@@ -273,11 +251,11 @@ def describe_beats(
             scene.vision = Vision(
                 summary="", tags=[], text_on_screen=None, confidence=0.0
             )
-            _append_log(
-                log_path, f"[{idx}/{total}] scene {sid}: FAIL type={etype} msg={msg}"
-            )
+            log.info(f"[{idx}/{total}] scene {sid}: FAIL type={etype} msg={msg}")
+            log.advance(1)
 
             if strict:
+                log.close()
                 raise RuntimeError(f"describe strict mode: scene {sid} failed")
 
     describe_meta["backend"] = backend
@@ -294,21 +272,19 @@ def describe_beats(
     params["describe"] = describe_meta
     run.params = params
 
-    # validate output with contract before writing :contentReference[oaicite:3]{index=3}
+    # validate output with contract before writing
     BeatsRun.model_validate(
         run.model_dump(exclude={"scenes": {"__all__": {"duration_s"}}})
     )
 
     json_text = run.model_dump_json(
         indent=2,
-        exclude={
-            "scenes": {"__all__": {"duration_s"}}
-        },  # match emit_beats convention :contentReference[oaicite:4]{index=4}
+        exclude={"scenes": {"__all__": {"duration_s"}}},  # match emit_beats convention
     )
-    _write_text(out_path, json_text)
+    write_text(out_path, json_text)
 
-    _append_log(
-        log_path,
-        f"describe: end out={out_path.name} done={done} skipped={skipped} failed={failed}",
+    log.info(
+        f"describe: end out={out_path.name} done={done} skipped={skipped} failed={failed}"
     )
+    log.close()
     return out_path

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from pipeline.contracts.beats import (
     BeatsRun,
@@ -13,6 +14,8 @@ from pipeline.contracts.beats import (
     Beat,
     Vision,
 )
+from pipeline.util.jsonio import write_text
+from pipeline.util.log import RunLogger
 
 
 def _r(x: float, ndigits: int = 3) -> float:
@@ -30,13 +33,14 @@ def write_beats_json(
     duration_s: float,
     width: int,
     height: int,
-    params: dict,
+    params: dict[str, Any],
     scenes_times: list[tuple[float, float]],
     scenes_keyframes: list[list[tuple[Path, float]]],
     out_path: Path,
+    logger: RunLogger | None = None,
 ) -> Path:
-    scenes = []
-    beats = []
+    scenes: list[Scene] = []
+    beats: list[Beat] = []
 
     for scene_id, (start_s, end_s) in enumerate(scenes_times):
         start_s_r = _r(start_s)
@@ -57,7 +61,8 @@ def write_beats_json(
                 vision=Vision(),  # empty for now
             )
         )
-        # right now beats are just a 1:1 mirror of scenes, acting as scaffolding
+
+        # beats mirror scenes 1:1 as scaffolding
         beats.append(
             Beat(
                 beat_id=scene_id,
@@ -86,11 +91,15 @@ def write_beats_json(
         beats=beats,
     )
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-
     json_text = run.model_dump_json(
         indent=2,
         exclude={"scenes": {"__all__": {"duration_s"}}},
     )
-    out_path.write_text(json_text, encoding="utf-8")
+    write_text(out_path, json_text)
+
+    if logger:
+        logger.info(
+            f"emit_beats: wrote {out_path.name} scenes={len(scenes)} beats={len(beats)}"
+        )
+
     return out_path
