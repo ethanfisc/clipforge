@@ -34,6 +34,10 @@ class RunPaths:
     def beats_vision_path(self) -> Path:
         return self.run_dir / "beats.vision.json"
 
+    @property
+    def beats_edit_path(self) -> Path:
+        return self.run_dir / "beats.edit.json"
+
     def ensure(self) -> None:
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.logs_dir.mkdir(parents=True, exist_ok=True)

@@ -1,6 +1,8 @@
 .venv
 assets
-outputs
 __pycache__
 runs
 .env
+clipforge.zip
+notes.txt
+cache

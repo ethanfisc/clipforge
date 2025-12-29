@@ -10,6 +10,7 @@ import typer
 from pipeline.contracts.beats import BeatsRun
 from pipeline.paths import RunPaths, repo_root
 from pipeline.steps.describe import describe_beats
+from pipeline.steps.edit_beats import edit_beats
 from pipeline.steps.download import download_video
 from pipeline.steps.emit_beats import write_beats_json
 from pipeline.steps.keyframes import extract_keyframes
@@ -247,6 +248,80 @@ def describe(
         if isinstance(failed, int):
             typer.echo(f"failed:   {failed}")
 
+    finally:
+        log.close()
+
+
+@app.command()
+def edit(
+    beats_vision_path: Path,
+    overwrite: bool = typer.Option(False, "--overwrite"),
+    out: Path | None = typer.Option(None, "--out"),
+    target_min_s: float = typer.Option(45.0, "--target-min-s"),
+    target_max_s: float = typer.Option(75.0, "--target-max-s"),
+    target_len_s: float = typer.Option(60.0, "--target-len-s"),
+    beats_min: int = typer.Option(6, "--beats-min"),
+    beats_max: int = typer.Option(12, "--beats-max"),
+    min_beat_s: float = typer.Option(2.5, "--min-beat-s"),
+    max_beat_s: float = typer.Option(15.0, "--max-beat-s"),
+    verbose: bool = typer.Option(
+        False, "--verbose", help="Print step logs to console."
+    ),
+    progress: bool = typer.Option(
+        False, "--progress", help="Show a progress bar (requires rich)."
+    ),
+):
+    """
+    Stage 4: Convert beats.vision.json -> beats.edit.json.
+    Produces 6-12 editorial beats for a coherent 45-75s short (contiguous window if needed).
+    """
+    beats_vision_path = beats_vision_path.resolve()
+    run_dir = beats_vision_path.parent
+    logs_dir = run_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    log = RunLogger(
+        log_path=logs_dir / "edit_beats.log",
+        verbose=verbose,
+        progress_enabled=progress,
+    )
+
+    t0 = time.perf_counter()
+    try:
+        out_path = edit_beats(
+            beats_vision_path,
+            out_path=out,
+            overwrite=overwrite,
+            target_min_s=target_min_s,
+            target_max_s=target_max_s,
+            target_len_s=target_len_s,
+            beats_min=beats_min,
+            beats_max=beats_max,
+            min_beat_s=min_beat_s,
+            max_beat_s=max_beat_s,
+            logger=log,
+        )
+        elapsed = time.perf_counter() - t0
+
+        run = BeatsRun.model_validate_json(out_path.read_text(encoding="utf-8"))
+        edit_meta = {}
+        if isinstance(run.params, dict):
+            edit_meta = run.params.get("edit", {}) or {}
+        counts = edit_meta.get("counts", {}) if isinstance(edit_meta, dict) else {}
+        beats_n = counts.get("beats") if isinstance(counts, dict) else None
+        sel_dur = (
+            edit_meta.get("selected_duration_s")
+            if isinstance(edit_meta, dict)
+            else None
+        )
+
+        typer.echo("validate: OK")
+        typer.echo(f"out:      {out_path}")
+        typer.echo(f"elapsed:  {elapsed:.1f}s")
+        if isinstance(beats_n, int):
+            typer.echo(f"beats:    {beats_n}")
+        if isinstance(sel_dur, (int, float)):
+            typer.echo(f"dur_s:    {float(sel_dur):.1f}")
     finally:
         log.close()
 
